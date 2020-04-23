@@ -15,7 +15,8 @@
 
 import numpy as np
 import matplotlib.pyplot as plt
-import math, random
+import math, random, time
+import multiprocessing as mp
 
 class Neuron:
   
@@ -24,12 +25,12 @@ class Neuron:
     self.PC_status = np.zeros(nCells).astype('bool')
     self.options = {'PC_dist':'uniform'}
     self.field = []
+    self.bh = bh
+    self.nCells = nCells
     
-    self.activity = np.zeros((nCells,len(bh['time_raw'])))
+    self.activity = np.zeros((nCells,len(self.bh['time_raw'])))
     self.rate_pp = []
     self.x_max = 100
-    
-    
     
     for n in range(nCells):
       
@@ -53,8 +54,19 @@ class Neuron:
         #self.field[n]['sigma'] = np.NaN;
         #self.field[n]['A'] = 0;
       
-      self.rate_pp.append(set_TC_fun(self.field[n]))
+      #self.rate_pp.append(self.set_TC_fun(self.field[n]))
+    
+    
+  def set_TC_fun(self,field):
+    def TC_fun(x):
       
+      x_max = 100
+      TC = np.ones(len(x))*field['A_0']
+      if field['nModes'] > 0:
+        for j in [-1,0,1]:   ## loop, to have periodic boundary conditions
+          TC += field['A']*np.exp(-(x-field['theta']+x_max*j)**2/(2*field['sigma']**2))
+      return TC
+    return TC_fun
       
   def set_PC_field(self,track,activity,PC_prob):
     
@@ -79,14 +91,33 @@ class Neuron:
     #elif self.options['PC_dist'] == 'manual':           ## according to provided distribution
     return field
   
-  def generate_activity(self,n,bh):
+  def generate_activity_all(self,nP=0):
+    
+    t_start = time.time()
+    if nP> 0:
+      pool = mp.Pool(nP)
+      self.activity = pool.map(self.generate_activity,range(self.nCells))
+      #print(status)
+      print('>>> all done. time passed: %6.4g secs <<<'%(time.time()-t_start))
+    else:
+      ### generate activity for neurons
+      perc = 0.1;
+      j = 0;
+      for n in range(self.nCells):
+        if n/self.nCells>=perc*j:
+          print('>>> %3.0d%% done. time passed: %6.4g secs <<<'%(round(perc*j*100),time.time()-t_start))
+          j=j+1;
+        self.activity[n,:] = self.generate_activity(n)
+    
+  def generate_activity(self,n):
     # example of generating a 
     # nonhomogeneous poisson process on [0,T] with intensity function intens
     
-    intens = self.rate_pp[n];
-    intens_pos = intens(bh['binpos_raw'])
+    #print('processing neuron n=%d'%n)
+    intens = self.set_TC_fun(self.field[n])#self.rate_pp[n];
+    intens_pos = intens(self.bh['binpos_raw'])
     
-    t = bh['time_raw']
+    t = self.bh['time_raw']
     T_end = t[-1]
     dt = t[1]-t[0];
     max_intens = self.field[n]['A_0'] + self.field[n]['A'];   ## define rate as maximum rate of hompp
@@ -107,16 +138,18 @@ class Neuron:
     m = intens_pos[idx_AP]                         ## evaluates intensity function at homogeneous pp points
     
     #idx_AP_store =np.copy(idx_AP)
-    trials_frame = np.hstack([0, np.where(np.diff(bh['binpos_raw'])<-10)[0]+1,len(bh['time_raw'])-1])
+    trials_frame = np.hstack([0, np.where(np.diff(self.bh['binpos_raw'])<-10)[0]+1,len(self.bh['time_raw'])-1])
     
     if self.field[n]['nModes']>0:
       if self.field[n]['activation']<1:
         idx_keep = np.zeros(nAP).astype('bool')
-        for i in range(bh['trials']['ct']):
+        for i in range(self.bh['trials']['ct']):
           
           idx_trial_APs = np.where((T_AP>=t[trials_frame[i]]) & (T_AP<t[trials_frame[i+1]]))[0]
-          
+          if len(idx_trial_APs)==0:
+            continue
           N_APs = len(idx_trial_APs)
+          #print(idx_trial_APs)
           idx_first_trial_AP = idx_trial_APs[0]
           idx_last_trial_AP = idx_trial_APs[-1]
           
@@ -159,29 +192,19 @@ class Neuron:
       plt.plot(np.ones(2)/15,[0,10],'r')
       
       plt.subplot(321)
-      plt.plot(bh['time_raw'],intens_pos,'k-')
+      plt.plot(self.bh['time_raw'],intens_pos,'k-')
       plt.scatter(T_AP,intens_pos[idx_AP],color='r',marker='o')
       
       plt.subplot(323)
-      plt.plot(t,bh['binpos_raw'],'k')
-      plt.scatter(T_AP,bh['binpos_raw'][idx_AP],color='r',marker='o')
+      plt.plot(t,self.bh['binpos_raw'],'k')
+      plt.scatter(T_AP,self.bh['binpos_raw'][idx_AP],color='r',marker='o')
       
       plt.subplot(325)
       plt.plot(t,self.activity[n,:],'r-')
       
       plt.show()
       plt.close('all')
+    return self.activity[n,:]
     
 def draft_para(in_range,n=1):
   return in_range[0] + (in_range[1] - in_range[0])*np.random.rand(n)
-
-def set_TC_fun(field):
-  def TC_fun(x):
-    
-    x_max = 100
-    TC = np.ones(len(x))*field['A_0']
-    if field['nModes'] > 0:
-      for j in [-1,0,1]:   ## loop, to have periodic boundary conditions
-        TC += field['A']*np.exp(-(x-field['theta']+x_max*j)**2/(2*field['sigma']**2))
-    return TC
-  return TC_fun

@@ -39,7 +39,8 @@ class Neuron:
                          'sigma':np.NaN,
                          'A':0,
                          'A_0':-1,
-                         'activation':np.NaN})
+                         'activation':np.NaN,
+                         'activation_real':np.NaN})
       
       
       #self.PC_status[n] = (bool(activity['nModes']) & (random.random()<PC_prob))
@@ -95,9 +96,16 @@ class Neuron:
     
     t_start = time.time()
     if nP> 0:
+      
       pool = mp.Pool(nP)
-      self.activity = pool.map(self.generate_activity,range(self.nCells))
-      #print(status)
+      results = pool.map(self.generate_activity,range(self.nCells))
+      #print(results)
+      for ((S,act),n) in zip(results,range(self.nCells)):
+        self.activity[n,:] = S
+        self.field[n]['activation_real'] = act
+        
+      #self.activity
+      #print(self.activity)
       print('>>> all done. time passed: %6.4g secs <<<'%(time.time()-t_start))
     else:
       ### generate activity for neurons
@@ -107,7 +115,7 @@ class Neuron:
         if n/self.nCells>=perc*j:
           print('>>> %3.0d%% done. time passed: %6.4g secs <<<'%(round(perc*j*100),time.time()-t_start))
           j=j+1;
-        self.activity[n,:] = self.generate_activity(n)
+        self.activity[n,:],activate_real = self.generate_activity(n)
     
   def generate_activity(self,n):
     # example of generating a 
@@ -140,6 +148,7 @@ class Neuron:
     #idx_AP_store =np.copy(idx_AP)
     trials_frame = np.hstack([0, np.where(np.diff(self.bh['binpos_raw'])<-10)[0]+1,len(self.bh['time_raw'])-1])
     
+    ct_activate = 0
     if self.field[n]['nModes']>0:
       if self.field[n]['activation']<1:
         idx_keep = np.zeros(nAP).astype('bool')
@@ -157,6 +166,7 @@ class Neuron:
           
           if random.random() < self.field[n]['activation']:
             m_trial = m[idx_first_trial_AP:idx_last_trial_AP+1]
+            ct_activate += 1
           else:
             m_trial = np.ones(N_APs)*m.min()
           
@@ -172,6 +182,9 @@ class Neuron:
       t_AP = t_AP[idx_keep];      ## filter out some points with prob according to ratio of nonhomo/homo pp
       T_AP = T_AP[idx_keep];
     nAP=len(t_AP);
+    
+    activation_real = ct_activate/self.bh['trials']['ct']
+    #print('activated: %d of %d, (activation=%3.1f vs %3.1f)'%(ct_activate,self.bh['trials']['ct'],activation_real,self.field[n]['activation']))
     
     #print(np.ndtype(idx_AP))
     #print(idx_AP)
@@ -204,7 +217,7 @@ class Neuron:
       
       plt.show()
       plt.close('all')
-    return self.activity[n,:]
+    return self.activity[n,:], activation_real
     
 def draft_para(in_range,n=1):
   return in_range[0] + (in_range[1] - in_range[0])*np.random.rand(n)

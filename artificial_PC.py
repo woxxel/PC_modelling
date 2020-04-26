@@ -66,7 +66,7 @@ class artificialData:
       neurons.generate_activity_all(self.nP);
       
       self.neuronData['fields'] = neurons.field
-      self.neuronData['S'] = neurons.activity
+      self.neuronData['S'] = sp.sparse.csr_matrix(neurons.activity)
       
       pickleData(self.neuronData,self.pathNeurons,'save')
     else:
@@ -86,7 +86,7 @@ class artificialData:
       if self.redo | rerun | (not os.path.exists(pathSave)):
         
         self.dPC.para['svname_art'] = pathSave
-        PC_fields_batch = self.dPC.run_detection(self.neuronData['S'][i*batchSize:(i+1)*batchSize,:],rerun=rerun,return_results=True,artificial=True)
+        PC_fields_batch = self.dPC.run_detection(self.neuronData['S'][i*batchSize:(i+1)*batchSize,:].toarray(),rerun=rerun,return_results=True,artificial=True)
         self.PC_fields = extend_dict(self.PC_fields,PC_fields_batch['fields']['parameter'].shape[0],PC_fields_batch)
         #return
         pickleData(PC_fields_batch,pathSave,'save')
